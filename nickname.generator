@@ -1,0 +1,142 @@
+package com.queuedpixel.thingnamer;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.PrintWriter;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Set;
+
+public class Parser
+{
+    public static void main( String[] args ) throws Exception
+    {
+        if ( args.length < 1 )
+        {
+            System.out.println( "Dictionary file(s) not specified." );
+            System.out.println( "Usage: java com.queuedpixel.thingnamer.Parser [dictionary file(s)]" );
+            return;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for ( String arg : args )
+        {
+            System.out.println( "Reading dictionary in: " + arg );
+            try ( BufferedReader reader = new BufferedReader( new FileReader( arg )))
+            {
+                String line = reader.readLine();
+                while ( line != null )
+                {
+                    if ( builder.length() > 0 ) builder.append( " " );
+                    builder.append( line );
+                    line = reader.readLine();
+                }
+            }
+        }
+
+        String contents = builder.toString();
+        Collection< String > paragraphs = Parser.getParagraphs( contents );
+        Map< String, Set< String >> entries = new LinkedHashMap<>();
+        for ( String paragraph : paragraphs )
+        {
+            String entry        = Parser.getTag( paragraph, "<ent>"  );
+            String partOfSpeech = Parser.getTag( paragraph, "<pos>"  );
+            String mark         = Parser.getTag( paragraph, "<mark>" );
+
+            // ignore null entries
+            if (( entry == null ) || ( partOfSpeech == null )) continue;
+
+            // ignore words that aren't composed of only letters
+            if ( !entry.matches( "[a-zA-Z][a-z]*" )) continue;
+
+            // ignore words that are offensive, vulgar, etc.
+            if ( mark != null )
+            {
+                mark = mark.toLowerCase();
+                if ( mark.contains( "contemptuous" )) continue;
+                if ( mark.contains( "derog"        )) continue; // short for: derogatory
+                if ( mark.contains( "disparaging"  )) continue;
+                if ( mark.contains( "offensive"    )) continue;
+                if ( mark.contains( "slang"        )) continue;
+                if ( mark.contains( "vulgar"       )) continue;
+            }
+
+            // convert the entry to lower case
+            entry = entry.toLowerCase();
+
+            // look for the parts of speech we are interested in
+            partOfSpeech = partOfSpeech.trim();
+            switch ( partOfSpeech )
+            {
+                case "a." : partOfSpeech = "adjective"; break;
+                case "n." : partOfSpeech = "noun";      break;
+                default   : continue;
+            }
+
+            Set< String > partsOfSpeech;
+
+            if ( entries.containsKey( entry ))
+            {
+                // add the part of speech to the existing entry
+                partsOfSpeech = entries.get( entry );
+            }
+            else
+            {
+                // add a new entry
+                partsOfSpeech = new LinkedHashSet<>();
+                entries.put( entry, partsOfSpeech );
+            }
+
+            partsOfSpeech.add( partOfSpeech );
+        }
+
+        try ( PrintWriter adjectiveWriter = new PrintWriter( "adjectives.txt" );
+              PrintWriter nounWriter      = new PrintWriter( "nouns.txt"      ))
+        {
+            for ( String entry : entries.keySet() )
+            {
+                if ( entries.get( entry ).contains( "adjective" )) adjectiveWriter.println( entry );
+                if ( entries.get( entry ).contains( "noun"      )) nounWriter.println(      entry );
+            }
+        }
+    }
+
+    private static Collection< String > getParagraphs( String contents )
+    {
+        String paragraphStart = "<p>";
+        String paragraphEnd   = "</p>";
+
+        LinkedList< String > strings = new LinkedList<>();
+        int index = 0;
+        while ( contents.indexOf( paragraphStart, index ) >= 0 )
+        {
+            int start = contents.indexOf( paragraphStart, index );
+            int end   = contents.indexOf( paragraphEnd,   index );
+
+            // ignore paragraphs with no start tag
+            if ( end < start )
+            {
+                index = start;
+                continue;
+            }
+
+            end += paragraphEnd.length();
+            strings.add( contents.substring( start, end ));
+            index = end;
+        }
+
+        return strings;
+    }
+
+    private static String getTag( String content, String tagStart )
+    {
+        int start = content.indexOf( tagStart );
+        int end   = content.indexOf( "<", start + tagStart.length() );
+        if ( start < 0 ) return null;
+        start += tagStart.length();
+        return content.substring( start, end );
+    }
+}
